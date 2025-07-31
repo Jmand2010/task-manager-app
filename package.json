@@ -1,0 +1,31 @@
+{
+  "name": "task-manager-app",
+  "version": "1.0.0",
+  "description": "A professional task management app with categories, priorities, and due dates",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve .",
+    "build": "echo 'No build process needed for static HTML'",
+    "dev": "npx serve . -l 3000"
+  },
+  "keywords": [
+    "task-manager",
+    "todo",
+    "productivity",
+    "react",
+    "responsive"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/task-manager-app.git"
+  },
+  "homepage": "https://yourusername.github.io/task-manager-app",
+  "devDependencies": {
+    "serve": "^14.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
