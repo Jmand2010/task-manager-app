@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { Plus, Phone, Mail, Building2, FolderOpen, FileText, PenTool, CheckSquare, Edit3, Trash2, Calendar, AlertCircle, Filter, Search } = lucideReact;
+
+        const TaskManager = () => {
+          const [tasks, setTasks] = useState([]);
+          const [newTask, setNewTask] = useState({ 
+            title: '', 
+            category: 'phone-calls', 
+            priority: 'medium', 
+            dueDate: '',
+            notes: ''
+          });
+          const [filter, setFilter] = useState('all');
+          const [searchTerm, setSearchTerm] = useState('');
+          const [editingTask, setEditingTask] = useState(null);
+          const [showAddForm, setShowAddForm] = useState(false);
+
+          const categories = [
+            { id: 'phone-calls', name: 'Phone Calls', icon: Phone, color: 'bg-blue-500' },
+            { id: 'emails', name: 'Emails', icon: Mail, color: 'bg-green-500' },
+            { id: 'suppliers', name: 'Suppliers', icon: Building2, color: 'bg-orange-500' },
+            { id: 'projects', name: 'Projects', icon: FolderOpen, color: 'bg-purple-500' },
+            { id: 'estimates', name: 'Estimates/Proposals', icon: FileText, color: 'bg-indigo-500' },
+            { id: 'drawings', name: 'Drawings', icon: PenTool, color: 'bg-pink-500' },
+            { id: 'random', name: 'Random Tasks', icon: CheckSquare, color: 'bg-gray-500' }
+          ];
+
+          const priorities = [
+            { id: 'low', name: 'Low', color: 'text-gray-500' },
+            { id: 'medium', name: 'Medium', color: 'text-yellow-600' },
+            { id: 'high', name: 'High', color: 'text-red-600' }
+          ];
+
+          // Load tasks from localStorage on component mount
+          useEffect(() => {
+            const savedTasks = localStorage.getItem('taskManagerTasks');
+            if (savedTasks) {
+              setTasks(JSON.parse(savedTasks));
+            }
+          }, []);
+
+          // Save tasks to localStorage whenever tasks change
+          useEffect(() => {
+            localStorage.setItem('taskManagerTasks', JSON.stringify(tasks));
+          }, [tasks]);
+
+          const addTask = () => {
+            if (!newTask.title.trim()) return;
+            
+            const task = {
+              id: Date.now(),
+              ...newTask,
+              completed: false,
+              createdAt: new Date().toISOString()
+            };
+            
+            setTasks([task, ...tasks]);
+            setNewTask({ title: '', category: 'phone-calls', priority: 'medium', dueDate: '', notes: '' });
+            setShowAddForm(false);
+          };
+
+          const toggleTask = (id) => {
+            setTasks(tasks.map(task => 
+              task.id === id ? { ...task, completed: !task.completed } : task
+            ));
+          };
+
+          const deleteTask = (id) => {
+            setTasks(tasks.filter(task => task.id !== id));
+          };
+
+          const updateTask = (id, updates) => {
+            setTasks(tasks.map(task => 
+              task.id === id ? { ...task, ...updates } : task
+            ));
+            setEditingTask(null);
+          };
+
+          const getCategoryInfo = (categoryId) => {
+            return categories.find(cat => cat.id === categoryId) || categories[0];
+          };
+
+          const getPriorityInfo = (priorityId) => {
+            return priorities.find(p => p.id === priorityId) || priorities[1];
+          };
+
+          const getDateStatus = (dueDate) => {
+            if (!dueDate) return null;
+            
+            const today = new Date();
+            const due = new Date(dueDate);
+            const diffTime = due - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays < 0) return { status: 'overdue', days: Math.abs(diffDays), color: 'text-red-700 bg-red-100' };
+            if (diffDays === 0) return { status: 'today', days: 0, color: 'text-red-600 bg-red-50' };
+            if (diffDays === 1) return { status: 'tomorrow', days: 1, color: 'text-orange-600 bg-orange-50' };
+            if (diffDays <= 3) return { status: 'soon', days: diffDays, color: 'text-yellow-600 bg-yellow-50' };
+            if (diffDays <= 7) return { status: 'week', days: diffDays, color: 'text-blue-600 bg-blue-50' };
+            return { status: 'future', days: diffDays, color: 'text-gray-600 bg-gray-50' };
+          };
+
+          const isOverdue = (dueDate) => {
+            if (!dueDate) return false;
+            return new Date(dueDate) < new Date();
+          };
+
+          const filteredTasks = tasks.filter(task => {
+            const matchesFilter = filter === 'all' || 
+                                 filter === 'completed' && task.completed ||
+                                 filter === 'pending' && !task.completed ||
+                                 filter === task.category;
+            
+            const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                 task.notes.toLowerCase().includes(searchTerm.toLowerCase());
+            
+            return matchesFilter && matchesSearch;
+          });
+
+          const TaskForm = ({ task, onSave, onCancel }) => {
+            const [formData, setFormData] = useState(task || newTask);
+
+            const handleSubmit = () => {
+              if (!formData.title.trim()) return;
+              onSave(formData);
+            };
+
+            return (
+              <div className="bg-white p-4 rounded-lg shadow-lg border-2 border-blue-200">
+                <div className="space-y-4">
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Task title..."
+                      value={formData.title}
+                      onChange={(e) => setFormData({...formData, title: e.target.value})}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-lg"
+                      autoFocus
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                      <select
+                        value={formData.category}
+                        onChange={(e) => setFormData({...formData, category: e.target.value})}
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                      >
+                        {categories.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+                      <select
+                        value={formData.priority}
+                        onChange={(e) => setFormData({...formData, priority: e.target.value})}
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                      >
+                        {priorities.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Due Date (Optional)</label>
+                    <input
+                      type="date"
+                      value={formData.dueDate}
+                      onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
+                    <textarea
+                      placeholder="Additional details..."
+                      value={formData.notes}
+                      onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none h-20 resize-none"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      {task ? 'Update Task' : 'Add Task'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCancel}
+                      className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div className="min-h-screen bg-gray-50 p-4">
+              <div className="max-w-4xl mx-auto">
+                {/* Header */}
+                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                  <h1 className="text-3xl font-bold text-gray-800 mb-4">Task Manager</h1>
+                  
+                  {/* Search and Filter Bar */}
+                  <div className="flex flex-col md:flex-row gap-4 mb-4">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        placeholder="Search tasks..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <select
+                        value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                        className="px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none bg-white"
+                      >
+                        <option value="all">All Tasks</option>
+                        <option value="pending">Pending</option>
+                        <option value="completed">Completed</option>
+                        {categories.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))}
+                      </select>
+                      
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium"
+                      >
+                        <Plus className="w-5 h-5" />
+                        Add Task
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Task Stats */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <div className="text-2xl font-bold text-blue-600">{tasks.length}</div>
+                      <div className="text-sm text-gray-600">Total</div>
+                    </div>
+                    <div className="bg-yellow-50 p-3 rounded-lg">
+                      <div className="text-2xl font-bold text-yellow-600">{tasks.filter(t => !t.completed).length}</div>
+                      <div className="text-sm text-gray-600">Pending</div>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <div className="text-2xl font-bold text-green-600">{tasks.filter(t => t.completed).length}</div>
+                      <div className="text-sm text-gray-600">Completed</div>
+                    </div>
+                    <div className="bg-red-50 p-3 rounded-lg">
+                      <div className="text-2xl font-bold text-red-600">{tasks.filter(t => t.dueDate && isOverdue(t.dueDate) && !t.completed).length}</div>
+                      <div className="text-sm text-gray-600">Overdue</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Add Task Form */}
+                {showAddForm && (
+                  <div className="mb-6">
+                    <TaskForm
+                      onSave={(taskData) => {
+                        const task = {
+                          id: Date.now(),
+                          ...taskData,
+                          completed: false,
+                          createdAt: new Date().toISOString()
+                        };
+                        setTasks([task, ...tasks]);
+                        setShowAddForm(false);
+                      }}
+                      onCancel={() => setShowAddForm(false)}
+                    />
+                  </div>
+                )}
+
+                {/* Tasks List */}
+                <div className="space-y-3">
+                  {filteredTasks.length === 0 ? (
+                    <div className="bg-white p-8 rounded-lg shadow-sm text-center">
+                      <CheckSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                      <h3 className="text-xl font-medium text-gray-500 mb-2">No tasks found</h3>
+                      <p className="text-gray-400">
+                        {searchTerm ? 'Try adjusting your search terms' : 'Add your first task to get started!'}
+                      </p>
+                    </div>
+                  ) : (
+                    filteredTasks.map(task => {
+                      const categoryInfo = getCategoryInfo(task.category);
+                      const priorityInfo = getPriorityInfo(task.priority);
+                      const dateStatus = getDateStatus(task.dueDate);
+                      const Icon = categoryInfo.icon;
+
+                      return (
+                        <div key={task.id} className={`bg-white p-4 rounded-lg shadow-sm border-l-4 ${categoryInfo.color} ${task.completed ? 'opacity-60' : ''} ${dateStatus && !task.completed ? 'ring-2 ring-opacity-50 ' + (dateStatus.status === 'overdue' ? 'ring-red-300' : dateStatus.status === 'today' ? 'ring-red-200' : dateStatus.status === 'tomorrow' ? 'ring-orange-200' : dateStatus.status === 'soon' ? 'ring-yellow-200' : 'ring-blue-200') : ''}`}>
+                          {editingTask === task.id ? (
+                            <TaskForm
+                              task={task}
+                              onSave={(updates) => updateTask(task.id, updates)}
+                              onCancel={() => setEditingTask(null)}
+                            />
+                          ) : (
+                            <div className="flex items-start gap-4">
+                              <input
+                                type="checkbox"
+                                checked={task.completed}
+                                onChange={() => toggleTask(task.id)}
+                                className="mt-1 w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                              />
+                              
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <Icon className={`w-5 h-5 text-white p-1 rounded ${categoryInfo.color}`} />
+                                  <h3 className={`text-lg font-medium ${task.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>
+                                    {task.title}
+                                  </h3>
+                                  <span className={`text-sm font-medium ${priorityInfo.color}`}>
+                                    {priorityInfo.name}
+                                  </span>
+                                </div>
+                                
+                                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                                  <span className="bg-gray-100 px-2 py-1 rounded">
+                                    {categoryInfo.name}
+                                  </span>
+                                  
+                                  {task.dueDate && (
+                                    <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${dateStatus ? dateStatus.color : 'text-gray-600 bg-gray-100'}`}>
+                                      <Calendar className="w-3 h-3" />
+                                      {dateStatus?.status === 'overdue' && `${dateStatus.days} days overdue`}
+                                      {dateStatus?.status === 'today' && 'Due today'}
+                                      {dateStatus?.status === 'tomorrow' && 'Due tomorrow'}
+                                      {dateStatus?.status === 'soon' && `Due in ${dateStatus.days} days`}
+                                      {dateStatus?.status === 'week' && `Due in ${dateStatus.days} days`}
+                                      {dateStatus?.status === 'future' && new Date(task.dueDate).toLocaleDateString()}
+                                      {!dateStatus && new Date(task.dueDate).toLocaleDateString()}
+                                      {dateStatus?.status === 'overdue' && <AlertCircle className="w-3 h-3" />}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {task.notes && (
+                                  <p className="mt-2 text-gray-600 text-sm bg-gray-50 p-2 rounded">
+                                    {task.notes}
+                                  </p>
+                                )}
+                              </div>
+                              
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setEditingTask(task.id)}
+                                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => deleteTask(task.id)}
+                                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<TaskManager />, document.getElementById('root'));
+    </script>
+</body>
+</html>
