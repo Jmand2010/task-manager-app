@@ -23,6 +23,21 @@
             text-align: center;
             margin-bottom: 30px;
         }
+        .sync-status {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .sync-online {
+            background: #d4edda;
+            color: #155724;
+        }
+        .sync-offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
         .add-task-form {
             background: #f9f9f9;
             padding: 20px;
@@ -113,6 +128,10 @@
     <div class="container">
         <h1>📋 Task Manager</h1>
         
+        <div id="sync-status" class="sync-status sync-offline">
+            🔄 Connecting to sync...
+        </div>
+        
         <div class="stats" id="stats">
             <div class="stat">
                 <div class="stat-number" id="total-tasks">0</div>
@@ -156,38 +175,122 @@
         </div>
 
         <div id="tasks-container">
-            <p style="text-align: center; color: #666;">No tasks yet. Add your first task above!</p>
+            <p style="text-align: center; color: #666;">Loading tasks...</p>
         </div>
     </div>
 
-    <script>
-        let tasks = [];
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, orderBy, query, Timestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
         
-        // Load tasks from localStorage
-        function loadTasks() {
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyD_a0PunfrDZETGMlbU7ZMvEKlWH_1D2dY",
+            authDomain: "task-manager-sync-a9cb2.firebaseapp.com",
+            projectId: "task-manager-sync-a9cb2",
+            storageBucket: "task-manager-sync-a9cb2.firebasestorage.app",
+            messagingSenderId: "355488797295",
+            appId: "1:355488797295:web:f08f7538a908d07db5339a"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        let tasks = [];
+        let isOnline = false;
+        
+        // Update sync status
+        function updateSyncStatus(online) {
+            isOnline = online;
+            const statusEl = document.getElementById('sync-status');
+            if (online) {
+                statusEl.className = 'sync-status sync-online';
+                statusEl.innerHTML = '✅ Synced across all devices';
+            } else {
+                statusEl.className = 'sync-status sync-offline';
+                statusEl.innerHTML = '⚠️ Offline - changes will sync when online';
+            }
+        }
+        
+        // Load tasks from Firestore
+        function loadTasksFromFirestore() {
+            const tasksQuery = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+            onSnapshot(tasksQuery, (snapshot) => {
+                updateSyncStatus(true);
+                tasks = [];
+                snapshot.forEach((doc) => {
+                    tasks.push({
+                        id: doc.id,
+                        ...doc.data()
+                    });
+                });
+                renderTasks();
+                updateStats();
+            }, (error) => {
+                console.log('Firestore error:', error);
+                updateSyncStatus(false);
+                loadTasksFromLocal(); // Fallback to local storage
+            });
+        }
+        
+        // Load tasks from localStorage (fallback)
+        function loadTasksFromLocal() {
             try {
                 const saved = localStorage.getItem('simpleTasks');
                 if (saved) {
                     tasks = JSON.parse(saved);
                 }
             } catch (e) {
-                console.log('Could not load tasks');
+                console.log('Could not load local tasks');
             }
             renderTasks();
             updateStats();
         }
         
-        // Save tasks to localStorage
-        function saveTasks() {
+        // Save task to Firestore
+        async function saveTaskToFirestore(task) {
+            try {
+                if (task.id && typeof task.id === 'string') {
+                    // Update existing task
+                    await setDoc(doc(db, 'tasks', task.id), task);
+                } else {
+                    // Add new task
+                    const docRef = await addDoc(collection(db, 'tasks'), task);
+                    console.log('Task added with ID: ', docRef.id);
+                }
+                updateSyncStatus(true);
+            } catch (error) {
+                console.log('Error saving to Firestore:', error);
+                updateSyncStatus(false);
+                // Save to local storage as fallback
+                saveTasksToLocal();
+            }
+        }
+        
+        // Delete task from Firestore
+        async function deleteTaskFromFirestore(taskId) {
+            try {
+                await deleteDoc(doc(db, 'tasks', taskId));
+                updateSyncStatus(true);
+            } catch (error) {
+                console.log('Error deleting from Firestore:', error);
+                updateSyncStatus(false);
+            }
+        }
+        
+        // Save tasks to localStorage (fallback)
+        function saveTasksToLocal() {
             try {
                 localStorage.setItem('simpleTasks', JSON.stringify(tasks));
             } catch (e) {
-                console.log('Could not save tasks');
+                console.log('Could not save tasks locally');
             }
         }
         
         // Add new task
-        function addTask() {
+        async function addTask() {
             const title = document.getElementById('task-title').value.trim();
             if (!title) {
                 alert('Please enter a task title');
@@ -195,20 +298,16 @@
             }
             
             const task = {
-                id: Date.now(),
                 title: title,
                 category: document.getElementById('task-category').value,
                 priority: document.getElementById('task-priority').value,
                 dueDate: document.getElementById('task-due-date').value,
                 notes: document.getElementById('task-notes').value.trim(),
                 completed: false,
-                createdAt: new Date().toISOString()
+                createdAt: Timestamp.now()
             };
             
-            tasks.unshift(task);
-            saveTasks();
-            renderTasks();
-            updateStats();
+            await saveTaskToFirestore(task);
             clearForm();
         }
         
@@ -222,22 +321,18 @@
         }
         
         // Toggle task completion
-        function toggleTask(id) {
-            tasks = tasks.map(task => 
-                task.id === id ? {...task, completed: !task.completed} : task
-            );
-            saveTasks();
-            renderTasks();
-            updateStats();
+        async function toggleTask(id) {
+            const task = tasks.find(t => t.id === id);
+            if (task) {
+                task.completed = !task.completed;
+                await saveTaskToFirestore(task);
+            }
         }
         
         // Delete task
-        function deleteTask(id) {
+        async function deleteTask(id) {
             if (confirm('Are you sure you want to delete this task?')) {
-                tasks = tasks.filter(task => task.id !== id);
-                saveTasks();
-                renderTasks();
-                updateStats();
+                await deleteTaskFromFirestore(id);
             }
         }
         
@@ -298,7 +393,7 @@
                     <div class="task ${task.category} ${task.completed ? 'completed' : ''}">
                         <div class="task-title">
                             <input type="checkbox" ${task.completed ? 'checked' : ''} 
-                                   onchange="toggleTask(${task.id})" style="width: auto; margin-right: 10px;">
+                                   onchange="toggleTask('${task.id}')" style="width: auto; margin-right: 10px;">
                             ${categoryInfo.emoji} ${task.title}
                         </div>
                         <div class="task-details">
@@ -308,7 +403,7 @@
                         </div>
                         ${task.notes ? `<div class="task-details" style="margin-top: 5px;"><strong>Notes:</strong> ${task.notes}</div>` : ''}
                         <div class="task-actions">
-                            <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
+                            <button class="delete-btn" onclick="deleteTask('${task.id}')">Delete</button>
                         </div>
                     </div>
                 `;
@@ -328,8 +423,14 @@
             document.getElementById('completed-tasks').textContent = completed;
         }
         
+        // Initialize the app
+        function initializeApp() {
+            // Try to load from Firestore first
+            loadTasksFromFirestore();
+        }
+        
         // Load tasks when page loads
-        window.onload = loadTasks;
+        window.onload = initializeApp;
         
         // Allow Enter key to add task
         document.getElementById('task-title').addEventListener('keypress', function(e) {
