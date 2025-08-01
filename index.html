@@ -424,13 +424,18 @@
         }
         
         // Initialize the app
-        function initializeApp() {
+        function initializeTaskApp() {
             // Try to load from Firestore first
             loadTasksFromFirestore();
         }
         
+        // Make functions globally available
+        window.addTask = addTask;
+        window.toggleTask = toggleTask;
+        window.deleteTask = deleteTask;
+        
         // Load tasks when page loads
-        window.onload = initializeApp;
+        initializeTaskApp();
         
         // Allow Enter key to add task
         document.getElementById('task-title').addEventListener('keypress', function(e) {
