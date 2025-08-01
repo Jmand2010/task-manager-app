@@ -23,6 +23,26 @@
             text-align: center;
             margin-bottom: 30px;
         }
+        .auth-container {
+            max-width: 400px;
+            margin: 50px auto;
+            text-align: center;
+        }
+        .auth-form {
+            background: #f9f9f9;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .user-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
         .sync-status {
             text-align: center;
             padding: 10px;
@@ -51,6 +71,7 @@
             border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 16px;
+            box-sizing: border-box;
         }
         button {
             background: #007bff;
@@ -61,6 +82,30 @@
         }
         button:hover {
             background: #0056b3;
+        }
+        .google-btn {
+            background: #db4437;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .google-btn:hover {
+            background: #c23321;
+        }
+        .auth-toggle {
+            color: #007bff;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .sign-out-btn {
+            background: #6c757d;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        .sign-out-btn:hover {
+            background: #5a6268;
         }
         .task {
             background: white;
@@ -122,11 +167,70 @@
         .estimates { border-left-color: #3f51b5; }
         .drawings { border-left-color: #e91e63; }
         .random { border-left-color: #607d8b; }
+        .hidden { display: none; }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- Authentication Screen -->
+    <div id="auth-screen" class="auth-container">
+        <div class="container">
+            <h1>📋 Task Manager</h1>
+            <p style="text-align: center; color: #666; margin-bottom: 30px;">
+                Sign in to access your personal task manager
+            </p>
+            
+            <div id="error-message" class="error-message hidden"></div>
+            
+            <!-- Login Form -->
+            <div id="login-form" class="auth-form">
+                <h3>Sign In</h3>
+                <input type="email" id="login-email" placeholder="Email address" required>
+                <input type="password" id="login-password" placeholder="Password" required>
+                <button onclick="signInWithEmail()">Sign In</button>
+                <button class="google-btn" onclick="signInWithGoogle()">
+                    🔍 Sign in with Google
+                </button>
+                <p style="margin-top: 15px;">
+                    Don't have an account? 
+                    <span class="auth-toggle" onclick="toggleAuthMode()">Sign up</span>
+                </p>
+            </div>
+            
+            <!-- Sign Up Form -->
+            <div id="signup-form" class="auth-form hidden">
+                <h3>Create Account</h3>
+                <input type="email" id="signup-email" placeholder="Email address" required>
+                <input type="password" id="signup-password" placeholder="Password (min 6 characters)" required>
+                <input type="password" id="signup-confirm" placeholder="Confirm password" required>
+                <button onclick="signUpWithEmail()">Create Account</button>
+                <button class="google-btn" onclick="signInWithGoogle()">
+                    🔍 Sign in with Google
+                </button>
+                <p style="margin-top: 15px;">
+                    Already have an account? 
+                    <span class="auth-toggle" onclick="toggleAuthMode()">Sign in</span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Screen -->
+    <div id="app-screen" class="container hidden">
         <h1>📋 Task Manager</h1>
+        
+        <div class="user-info">
+            <div>
+                <strong>👤 <span id="user-email">user@example.com</span></strong>
+            </div>
+            <button class="sign-out-btn" onclick="signOut()">Sign Out</button>
+        </div>
         
         <div id="sync-status" class="sync-status sync-offline">
             🔄 Connecting to sync...
@@ -180,11 +284,12 @@
     </div>
 
     <script type="module">
-        // Import the functions you need from the SDKs you need
+        // Import Firebase functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, orderBy, query, Timestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, orderBy, query, Timestamp, where } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
         
-        // Your web app's Firebase configuration
+        // Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyD_a0PunfrDZETGMlbU7ZMvEKlWH_1D2dY",
             authDomain: "task-manager-sync-a9cb2.firebaseapp.com",
@@ -196,10 +301,105 @@
 
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
         const db = getFirestore(app);
+        const googleProvider = new GoogleAuthProvider();
         
         let tasks = [];
+        let currentUser = null;
         let isOnline = false;
+        
+        // Show/hide screens
+        function showAuthScreen() {
+            document.getElementById('auth-screen').classList.remove('hidden');
+            document.getElementById('app-screen').classList.add('hidden');
+        }
+        
+        function showAppScreen() {
+            document.getElementById('auth-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+        }
+        
+        // Toggle between login and signup forms
+        function toggleAuthMode() {
+            const loginForm = document.getElementById('login-form');
+            const signupForm = document.getElementById('signup-form');
+            const errorMessage = document.getElementById('error-message');
+            
+            loginForm.classList.toggle('hidden');
+            signupForm.classList.toggle('hidden');
+            errorMessage.classList.add('hidden');
+        }
+        
+        // Show error message
+        function showError(message) {
+            const errorEl = document.getElementById('error-message');
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+        
+        // Sign in with email/password
+        async function signInWithEmail() {
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            
+            if (!email || !password) {
+                showError('Please enter email and password');
+                return;
+            }
+            
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        
+        // Sign up with email/password
+        async function signUpWithEmail() {
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const confirmPassword = document.getElementById('signup-confirm').value;
+            
+            if (!email || !password || !confirmPassword) {
+                showError('Please fill in all fields');
+                return;
+            }
+            
+            if (password !== confirmPassword) {
+                showError('Passwords do not match');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showError('Password must be at least 6 characters');
+                return;
+            }
+            
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        
+        // Sign in with Google
+        async function signInWithGoogle() {
+            try {
+                await signInWithPopup(auth, googleProvider);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        
+        // Sign out
+        async function signOut() {
+            try {
+                await firebaseSignOut(auth);
+            } catch (error) {
+                console.error('Sign out error:', error);
+            }
+        }
         
         // Update sync status
         function updateSyncStatus(online) {
@@ -214,9 +414,15 @@
             }
         }
         
-        // Load tasks from Firestore
+        // Load tasks from Firestore for current user
         function loadTasksFromFirestore() {
-            const tasksQuery = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+            if (!currentUser) return;
+            
+            const tasksQuery = query(
+                collection(db, 'users', currentUser.uid, 'tasks'), 
+                orderBy('createdAt', 'desc')
+            );
+            
             onSnapshot(tasksQuery, (snapshot) => {
                 updateSyncStatus(true);
                 tasks = [];
@@ -231,61 +437,39 @@
             }, (error) => {
                 console.log('Firestore error:', error);
                 updateSyncStatus(false);
-                loadTasksFromLocal(); // Fallback to local storage
             });
-        }
-        
-        // Load tasks from localStorage (fallback)
-        function loadTasksFromLocal() {
-            try {
-                const saved = localStorage.getItem('simpleTasks');
-                if (saved) {
-                    tasks = JSON.parse(saved);
-                }
-            } catch (e) {
-                console.log('Could not load local tasks');
-            }
-            renderTasks();
-            updateStats();
         }
         
         // Save task to Firestore
         async function saveTaskToFirestore(task) {
+            if (!currentUser) return;
+            
             try {
                 if (task.id && typeof task.id === 'string') {
                     // Update existing task
-                    await setDoc(doc(db, 'tasks', task.id), task);
+                    await setDoc(doc(db, 'users', currentUser.uid, 'tasks', task.id), task);
                 } else {
                     // Add new task
-                    const docRef = await addDoc(collection(db, 'tasks'), task);
+                    const docRef = await addDoc(collection(db, 'users', currentUser.uid, 'tasks'), task);
                     console.log('Task added with ID: ', docRef.id);
                 }
                 updateSyncStatus(true);
             } catch (error) {
                 console.log('Error saving to Firestore:', error);
                 updateSyncStatus(false);
-                // Save to local storage as fallback
-                saveTasksToLocal();
             }
         }
         
         // Delete task from Firestore
         async function deleteTaskFromFirestore(taskId) {
+            if (!currentUser) return;
+            
             try {
-                await deleteDoc(doc(db, 'tasks', taskId));
+                await deleteDoc(doc(db, 'users', currentUser.uid, 'tasks', taskId));
                 updateSyncStatus(true);
             } catch (error) {
                 console.log('Error deleting from Firestore:', error);
                 updateSyncStatus(false);
-            }
-        }
-        
-        // Save tasks to localStorage (fallback)
-        function saveTasksToLocal() {
-            try {
-                localStorage.setItem('simpleTasks', JSON.stringify(tasks));
-            } catch (e) {
-                console.log('Could not save tasks locally');
             }
         }
         
@@ -423,24 +607,51 @@
             document.getElementById('completed-tasks').textContent = completed;
         }
         
-        // Initialize the app
-        function initializeTaskApp() {
-            // Try to load from Firestore first
-            loadTasksFromFirestore();
-        }
+        // Listen for auth state changes
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // User is signed in
+                currentUser = user;
+                document.getElementById('user-email').textContent = user.email;
+                showAppScreen();
+                loadTasksFromFirestore();
+            } else {
+                // User is signed out
+                currentUser = null;
+                tasks = [];
+                showAuthScreen();
+            }
+        });
         
         // Make functions globally available
+        window.toggleAuthMode = toggleAuthMode;
+        window.signInWithEmail = signInWithEmail;
+        window.signUpWithEmail = signUpWithEmail;
+        window.signInWithGoogle = signInWithGoogle;
+        window.signOut = signOut;
         window.addTask = addTask;
         window.toggleTask = toggleTask;
         window.deleteTask = deleteTask;
         
-        // Load tasks when page loads
-        initializeTaskApp();
-        
         // Allow Enter key to add task
-        document.getElementById('task-title').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                addTask();
+        document.addEventListener('DOMContentLoaded', () => {
+            const taskTitle = document.getElementById('task-title');
+            if (taskTitle) {
+                taskTitle.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        addTask();
+                    }
+                });
+            }
+            
+            // Allow Enter key for login
+            const loginPassword = document.getElementById('login-password');
+            if (loginPassword) {
+                loginPassword.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        signInWithEmail();
+                    }
+                });
             }
         });
     </script>
